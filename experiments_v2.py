@@ -16,7 +16,7 @@ from tqdm import tqdm
 
 MODEL_ID = "claude-3-opus-20240229"
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "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"))
+client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "API_KEY"))
 
 @dataclass
 class Task:
@@ -386,24 +386,23 @@ def run_experiments(k_shot: int = 12):
     tasks = load_tasks()
     rows = []
     for task in tasks.values():
-        # # acc = sum(classify(task, txt, k_shot) == lab for txt, lab in task.test_pairs()) / len(task.test_pairs())
-        # mcq_resp, correct = articulate_rule_mcq(task)
+        # acc = sum(classify(task, txt, k_shot) == lab for txt, lab in task.test_pairs()) / len(task.test_pairs())
+        response = articulate_rule_cot(task)
+        print(response)
         # acc=1.0
         # # rows.append(dict(Task=task.name, Accuracy=acc, Rule=rule))
         # rows.append(dict(Task=task.name, Accuracy=acc, mcq_resp=mcq_resp, correct=correct))
         # # print(f"{task.name:20}  acc={acc:5.1%}  {rule}")
         # print(f"{task.name:20}  acc={acc:5.1%}  {mcq_resp}, correct={correct}")
-        faith_overall, faith_pos, faith_neg = faithfulness_score(task, k_shot)
-        acc=1.0
-        rows.append({"Task": task.name,
-                    "Accuracy": acc,
-                    "Faith": faith_overall,
-                    "Faith_pos": faith_pos,
-                    "Faith_neg": faith_neg,
-                    "Rule": task.rule})
-        print(f"{task.name:20}  acc={acc:5.1%}  faith={faith_overall:4.1%} faith_pos={faith_pos:4.1%} faith_neg={faith_neg:4.1%}  {task.rule}")
-    # print("\n=== Summary COT ===")
-    print(pd.DataFrame(rows).to_string(index=False))
+        # faith_overall, faith_pos, faith_neg = faithfulness_score(task, k_shot)
+        # rows.append({"Task": task.name,
+        #             "Accuracy": acc,
+        #             "Faith": faith_overall,
+        #             "Faith_pos": faith_pos,
+        #             "Faith_neg": faith_neg,
+        #             "Rule": task.rule})
+        # print(f"{task.name:20}  acc={acc:5.1%}  faith={faith_overall:4.1%} faith_pos={faith_pos:4.1%} faith_neg={faith_neg:4.1%}  {task.rule}")
+    # print(pd.DataFrame(rows).to_string(index=False))
 
 if __name__ == "__main__":
     run_experiments()

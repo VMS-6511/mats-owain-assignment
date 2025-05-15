@@ -30,7 +30,7 @@ negative examples (label=False).  Requirements:
 JSON:
 """
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "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"))
+client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "API_KEY"))
 
 def llm_generate_examples(rule_text: str, n=50):
     prompt = (PROMPT_TEMPLATE
