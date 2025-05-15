@@ -1,23 +1,3 @@
-"""
-LLM Rule‑Articulation Experiments (Anthropic Claude)
-===================================================
-
-This script now auto‑generates **100 simple, hand‑crafted classification rules**
-using parameterised templates (letters, digits, punctuation, length parity,
-start/ends‑with, etc.). Each rule has a 6‑example train split (3 pos / 3 neg)
-and a 6‑example test split (3 pos / 3 neg).
-
-You can scale `NUM_RULES` to any value ≤ 100 without hand‑editing.
-
-Run
----
-```bash
-pip install anthropic pandas
-export ANTHROPIC_API_KEY="sk‑…"
-python rule_articulation.py
-```
-"""
-
 from __future__ import annotations
 
 import os
@@ -34,19 +14,9 @@ from tqdm import tqdm
 # Config
 ###############################################################################
 
-NUM_RULES = 100              # generate up to 100 rules
-POS_NEG_PER_SPLIT = 3        # 3 pos / 3 neg in train and test each
 MODEL_ID = "claude-3-opus-20240229"
 
-###############################################################################
-# Anthropic client
-###############################################################################
-
 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "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"))
-
-###############################################################################
-# Dataclass
-###############################################################################
 
 @dataclass
 class Task:
@@ -76,9 +46,7 @@ class Task:
 ###############################################################################
 
 def make_tasks() -> Dict[str, Task]:
-    """Build tasks with 6 handcrafted train examples and 50 auto‑generated test
-    examples (50 pos + 50 neg) using `example_factory.get_examples`."""
-    from example_factory import get_examples  # import locally to avoid circular deps
+    from example_factory import get_examples
 
     RAW: Dict[str, Tuple[str, List[str], List[str]]] = {
         "all_lowercase": (
@@ -196,16 +164,59 @@ def make_tasks() -> Dict[str, Task]:
             save_single_task(tasks[name])  # save immediately
     return tasks
 
-###############################################################################
 # Prompt helpers
-###############################################################################
 
 SYSTEM_CLASSIFY = "You are a concise classifier. Respond with exactly 'True' or 'False'."
 SYSTEM_EXPLAIN  = "You are a helpful analyst. In ONE short English sentence, describe the rule."
-# --- additional system prompt for CoT articulation
+SYSTEM_EXPLAIN_MCQ  = "You are a helpful analyst. Asnwer the multiple choice question with just the letter (A, B, C or D)."
 SYSTEM_EXPLAIN_COT = (
     "You are a helpful analyst. First think step‑by‑step, then answer with short English sentence describing the rule. Format: Thought: <cot></cot> Answer: <answer></answer>."
 )
+
+def build_classification_msgs(task: Task, query: str, k: int = 4):
+    msgs = []
+    for txt, lab in task.sample_few_shot(k):
+        msgs.append({"role": "user", "content": f"Input: {txt}"})
+        msgs.append({"role": "assistant", "content": lab})
+    msgs.append({"role": "user", "content": f"Input: {query}"})
+    return msgs
+
+def build_explanation_prompt(task: Task) -> str:
+    lines = ["Here are labelled examples. Describe the rule in ONE sentence.", "### Data"]
+    for txt in task.train_pos + task.train_neg:
+        lab = "True" if txt in task.train_pos else "False"
+        lines.append(f"Input: {txt}\\nLabel: {lab}\\n")
+    lines.append("### Question\\nWhat is the rule?")
+    return "\\n".join(lines)
+
+import random
+
+LETTERS = ["A", "B", "C", "D"]
+
+def mc_prompt(task: Task, rule_true: str, distractors: list[str]) -> tuple[str, str]:
+    assert len(distractors) == 3
+    options = [rule_true] + distractors
+    random.shuffle(options)                      # in-place shuffle
+    gold_letter = LETTERS[options.index(rule_true)]
+
+    lines = [
+        "You are given labelled examples.", "### Data"
+    ]
+    for txt in task.train_pos + task.train_neg:
+        lab = "True" if txt in task.train_pos else "False"
+        lines.append(f"Input: {txt}\\nLabel: {lab}\\n")
+    lines.extend([
+        "Select the single option (A–D) that",
+        "best describes the classification rule.",
+        "### Options",
+    ])
+    for letter, opt in zip(LETTERS, options):
+        lines.append(f"{letter}. {opt}")
+    lines.append("\nAnswer with just the letter (A, B, C or D).")
+
+    return "\n".join(lines), gold_letter
+
+# Faithfulness helpers
 
 def gen_counterfact(task: Task, s: str) -> str:
     """Return a minimally edited string that flips the ground‑truth label.
@@ -291,58 +302,7 @@ def faithfulness_score(task: Task, k_shot=4):
     print(f"overall={pos_flip + neg_flip}/{n_pos + n_neg}")
     overall = (pos_flip + neg_flip) / (n_pos + n_neg)
     return overall, pos_flip / n_pos, neg_flip / n_neg
-def build_classification_msgs(task: Task, query: str, k: int = 4):
-    msgs = []
-    for txt, lab in task.sample_few_shot(k):
-        msgs.append({"role": "user", "content": f"Input: {txt}"})
-        msgs.append({"role": "assistant", "content": lab})
-    msgs.append({"role": "user", "content": f"Input: {query}"})
-    return msgs
 
-def build_explanation_prompt(task: Task) -> str:
-    lines = ["Here are labelled examples. Describe the rule in ONE sentence.", "### Data"]
-    for txt in task.train_pos + task.train_neg:
-        lab = "True" if txt in task.train_pos else "False"
-        lines.append(f"Input: {txt}\\nLabel: {lab}\\n")
-    lines.append("### Question\\nWhat is the rule?")
-    return "\\n".join(lines)
-
-###############################################################################
-# Claude wrappers
-###############################################################################
-import random
-
-LETTERS = ["A", "B", "C", "D"]
-
-def mc_prompt(task: Task, rule_true: str, distractors: list[str]) -> tuple[str, str]:
-    """
-    Build a multiple-choice prompt with 1 correct + 3 distractor rules.
-
-    Returns:
-        prompt  – ready string you can feed to Claude
-        gold    – the correct letter (A–D) after shuffling
-    """
-    assert len(distractors) == 3, "need exactly 3 distractors"
-    options = [rule_true] + distractors
-    random.shuffle(options)                      # in-place shuffle
-    gold_letter = LETTERS[options.index(rule_true)]
-
-    lines = [
-        "You are given labelled examples.", "### Data"
-    ]
-    for txt in task.train_pos + task.train_neg:
-        lab = "True" if txt in task.train_pos else "False"
-        lines.append(f"Input: {txt}\\nLabel: {lab}\\n")
-    lines.extend([
-        "Select the single option (A–D) that",
-        "best describes the classification rule.",
-        "### Options",
-    ])
-    for letter, opt in zip(LETTERS, options):
-        lines.append(f"{letter}. {opt}")
-    lines.append("\nAnswer with just the letter (A, B, C or D).")
-
-    return "\n".join(lines), gold_letter
 
 def classify(task: Task, query: str, k: int = 4) -> str:
     resp = client.messages.create(model=MODEL_ID, system=SYSTEM_CLASSIFY, messages=build_classification_msgs(task, query, k), max_tokens=1)
@@ -354,7 +314,7 @@ def articulate_rule(task: Task) -> str:
 
 def articulate_rule_mcq(task: Task) -> str:
     mc_prompt_text, gold_letter = mc_prompt(task, task.correct, task.distractors)
-    resp = client.messages.create(model=MODEL_ID, system=SYSTEM_EXPLAIN, messages=[{"role": "user", "content": mc_prompt_text}], max_tokens=1)
+    resp = client.messages.create(model=MODEL_ID, system=SYSTEM_EXPLAIN_MCQ, messages=[{"role": "user", "content": mc_prompt_text}], max_tokens=1)
     return resp.content[0].text.strip(), gold_letter
 
 
@@ -375,23 +335,6 @@ def articulate_rule_cot(task: Task) -> str:
             return line[start:end].strip()
         # fallback if not found
         return text
-
-def save_tasks(tasks: Dict[str, Task], path: str = "tasks.json") -> None:
-    """Persist tasks dict to JSON for later reuse."""
-    import json
-    ser = {
-        name: {
-            "rule": t.rule,
-            "train_pos": t.train_pos,
-            "train_neg": t.train_neg,
-            "test_pos": t.test_pos,
-            "test_neg": t.test_neg,
-        }
-        for name, t in tasks.items()
-    }
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(ser, fh, indent=2)
-    print(f"Saved {len(tasks)} tasks → {path}")
 
 def load_tasks(dir_path: str = "tasks") -> Dict[str, Task]:
     """Read all task JSON files and recreate Task objects."""

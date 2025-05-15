@@ -1,10 +1,3 @@
-"""
-example_factory.py  ·  Generate balanced (pos, neg) lists for 22 rules
-----------------------------------------------------------------------
-Call get_examples(rule_name, n=50) and receive (pos, neg) lists of length n.
-All generators are deterministic under random.seed().
-"""
-
 import random, string, re, os
 
 random.seed(0)  # reproducible
@@ -127,15 +120,6 @@ def verified_examples(rule_name, rule_text, n=50):
 
     return pos_ok[:n], neg_ok[:n]
 
-def gen_negative(rule):
-    t = gen_positive
-    while True:
-        txt = " ".join(word() for _ in range(2))
-        if not rule_true(rule, txt):
-            return txt
-
-
-# public API
 def get_examples(rule_name, rule_text, n=50):
     pos,neg = verified_examples(rule_name, rule_text, n)
     return pos, neg
