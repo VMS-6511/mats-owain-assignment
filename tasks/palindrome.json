@@ -1,0 +1,21 @@
+{
+  "rule": "Label is True *iff* the input (ignoring spaces/case) is a palindrome.",
+  "train_pos": [
+    "madam",
+    "racecar",
+    "level",
+    "civic",
+    "rotor",
+    "noon"
+  ],
+  "train_neg": [
+    "palindrome",
+    "python",
+    "algorithm",
+    "hello",
+    "world",
+    "openai"
+  ],
+  "test_pos": [],
+  "test_neg": []
+}
