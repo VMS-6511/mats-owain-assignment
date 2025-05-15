@@ -134,6 +134,7 @@ def gen_negative(rule):
         if not rule_true(rule, txt):
             return txt
 
+
 # public API
 def get_examples(rule_name, rule_text, n=50):
     pos,neg = verified_examples(rule_name, rule_text, n)

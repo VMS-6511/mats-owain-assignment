@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input contains a question mark.",
+  "correct": "The input contains a question mark.",
+  "distractors": [
+    "The input ends with a period.",
+    "The input contains an email address.",
+    "The input has more than three words."
+  ],
   "train_pos": [
     "are you ok?",
     "what time?",

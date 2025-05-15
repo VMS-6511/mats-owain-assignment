@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the character count is odd.",
+  "correct": "The input has an odd number of characters.",
+  "distractors":  [
+    "The input contains a color word.",
+    "The input starts with a digit.",
+    "Every word is capitalised (Title Case)."
+  ],
   "train_pos": [
     "abc",
     "123",

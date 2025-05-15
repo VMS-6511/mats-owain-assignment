@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input ends with an exclamation mark.",
+  "correct": "The input ends with an exclamation mark.",
+  "distractors": [
+    "The input contains at least one digit.",
+    "The input consists entirely of lowercase letters.",
+    "The input starts with a consonant."
+  ],
   "train_pos": [
     "watch out!",
     "amazing!",

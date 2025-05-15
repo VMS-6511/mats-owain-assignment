@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input has more than three words.",
+  "correct": "The input has more than three words.",
+  "distractors": [
+    "The input contains exactly two words.",
+    "The input is a palindrome.",
+    "The input ends with a question mark."
+  ],
   "train_pos": [
     "this has four words",
     "five words are here",

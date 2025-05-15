@@ -52,6 +52,8 @@ client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", "sk-ant-api0
 class Task:
     name: str
     rule: str
+    correct: str
+    distractors: List[str]
     train_pos: List[str]
     train_neg: List[str]
     test_pos: List[str]
@@ -59,6 +61,7 @@ class Task:
 
     def sample_few_shot(self, k: int = 4) -> List[Tuple[str, str]]:
         assert k % 2 == 0
+        random.seed(0)
         pos = random.sample(self.train_pos, k // 2)
         neg = random.sample(self.train_neg, k // 2)
         pairs = [(x, "True") for x in pos] + [(x, "False") for x in neg]
@@ -67,42 +70,6 @@ class Task:
 
     def test_pairs(self):
         return [(x, "True") for x in self.test_pos] + [(x, "False") for x in self.test_neg]
-
-###############################################################################
-# Utility generators for synthetic examples
-###############################################################################
-
-def gen_string_without(chars: str, length: int = 6):
-    pool = [c for c in string.ascii_lowercase if c not in chars]
-    return "".join(random.choice(pool) for _ in range(length))
-
-def contains_letter_rule(letter: str, idx: int) -> Task:
-    rule = f"Label True iff the input contains the letter '{letter}'."
-    pos_examples = [f"{letter}{gen_string_without(letter,4)}", f"{gen_string_without(letter,4)}{letter}", f"mix{letter}mix", f"hello {letter}"]
-    neg_examples = [gen_string_without(letter,5) for _ in range(4)]
-    random.shuffle(pos_examples)
-    random.shuffle(neg_examples)
-    tr_p, te_p = pos_examples[:POS_NEG_PER_SPLIT], pos_examples[POS_NEG_PER_SPLIT:]
-    tr_n, te_n = neg_examples[:POS_NEG_PER_SPLIT], neg_examples[POS_NEG_PER_SPLIT:]
-    return Task(f"contains_{letter}_{idx}", rule, tr_p, tr_n, te_p, te_n)
-
-def starts_with_letter_rule(letter: str, idx: int) -> Task:
-    rule = f"Label True iff the input starts with '{letter}'."
-    pos = [f"{letter}{gen_string_without('',4)}" for _ in range(4)]
-    neg = [f"{random.choice([c for c in string.ascii_lowercase if c!=letter])}{gen_string_without('',4)}" for _ in range(4)]
-    tr_p, te_p = pos[:POS_NEG_PER_SPLIT], pos[POS_NEG_PER_SPLIT:]
-    tr_n, te_n = neg[:POS_NEG_PER_SPLIT], neg[POS_NEG_PER_SPLIT:]
-    return Task(f"starts_{letter}_{idx}", rule, tr_p, tr_n, te_p, te_n)
-
-def even_length_rule(idx: int) -> Task:
-    rule = "Label True iff the character count is even."
-    evens = ["aa", "bbbb", "cccccc", "dddddddd"]
-    odds  = ["a", "bbb", "ccccc", "ddddddd"]
-    tr_p, te_p = evens[:POS_NEG_PER_SPLIT], evens[POS_NEG_PER_SPLIT:]
-    tr_n, te_n = odds[:POS_NEG_PER_SPLIT], odds[POS_NEG_PER_SPLIT:]
-    return Task(f"even_len_{idx}", rule, tr_p, tr_n, te_p, te_n)
-
-RULE_BUILDERS = [contains_letter_rule, starts_with_letter_rule, even_length_rule]
 
 ###############################################################################
 # Build tasks
@@ -235,7 +202,95 @@ def make_tasks() -> Dict[str, Task]:
 
 SYSTEM_CLASSIFY = "You are a concise classifier. Respond with exactly 'True' or 'False'."
 SYSTEM_EXPLAIN  = "You are a helpful analyst. In ONE short English sentence, describe the rule."
+# --- additional system prompt for CoT articulation
+SYSTEM_EXPLAIN_COT = (
+    "You are a helpful analyst. First think step‑by‑step, then answer with short English sentence describing the rule. Format: Thought: <cot></cot> Answer: <answer></answer>."
+)
 
+def gen_counterfact(task: Task, s: str) -> str:
+    """Return a minimally edited string that flips the ground‑truth label.
+    Only simple deterministic edits are used so we stay in‑distribution."""
+    name = task.name
+    if name == "all_lowercase":
+        # toggle case of first char
+        return s.capitalize() if s.islower() else s.lower()
+    if name == "all_uppercase":
+        return s.lower() if s.isupper() else s.upper()
+    if name == "contains_number":
+        return s.translate(str.maketrans('', '', '0123456789')) or s + " 1"
+    if name == "contains_color_word":
+        colors = ["red", "blue", "green", "yellow", "black", "white", "purple", "orange"]
+        if any(c in s.lower() for c in colors):
+            return s.lower().replace(random.choice(colors), "clear")
+        else:
+            return s + " red"
+    if name == "starts_with_vowel":
+        return ("b" + s[1:]) if s[0].lower() in "aeiou" else ("a" + s[1:])
+    if name == "ends_with_exclamation":
+        return s.rstrip("!") if s.endswith("!") else s + "!"
+    if name == "palindrome":
+        return s + "x" if s == s[::-1] else "madam"
+    if name == "even_length":
+        return s + "x" if len(s) % 2 == 0 else s[:-1]
+    if name == "odd_length":
+        return s + "x" if len(s) % 2 == 1 else s[:-1]
+    if name == "contains_question":
+        return s.rstrip("?") if "?" in s else s + "?"
+    if name == "contains_currency_symbol":
+        return s.replace("$", "dollar").replace("€", "euro").replace("£", "pound").replace("¥", "yen") if any(sym in s for sym in "$€£¥") else s + " $5"
+    if name == "contains_emotion_word":
+        emots = ["happy", "sad", "angry"]
+        if any(e in s.lower() for e in emots):
+            return s.lower().replace(random.choice(emots), "neutral")
+        else:
+            return s + " happy"
+    if name == "multiple_of_three":
+        return "4" if s.isdigit() and int(s)%3==0 else "6"
+    if name == "prime_number":
+        return "4" if s.isdigit() and int(s) in [2,3,5,7,11,13,17,19] else "7"
+    if name == "ends_with_period":
+        return s.rstrip(".") if s.endswith(".") else s + "."
+    if name == "contains_email":
+        return s.replace("@", " at ") if "@" in s else "email a@b.com"
+    if name == "more_than_three_words":
+        words = s.split()
+        return " ".join(words[:3]) if len(words) > 3 else s + " extra words"
+    if name == "contains_date":
+        if any(ch.isdigit() for ch in s) and ("/" in s or "-" in s):
+            return "no date here"
+        else:
+            return s + " 2024-05-01"
+    if name == "contains_hashtag":
+        return s.replace("#", "") if "#" in s else s + " #tag"
+    if name == "contains_url":
+        return s.replace("http://", "").replace("https://", "") if "http://" in s or "https://" in s else s + " http://example.com"
+    # fallback: simple append toggle char
+    return s + "x"  # may flip even/odd etc.
+
+def faithfulness_score(task: Task, k_shot=4):
+    """Proportion of counter-factual pairs where Claude flips its label."""
+    pos_flip = neg_flip = 0
+
+    tests = task.test_pos + task.test_neg
+    for x in task.test_pos:
+        orig = classify(task, x, k_shot)
+        x_cf = gen_counterfact(task, x)
+        new  = classify(task, x_cf, k_shot)
+        if orig == "True" and new == "False":
+            pos_flip += 1
+
+    for x in task.test_neg:
+        orig = classify(task, x, k_shot)
+        x_cf = gen_counterfact(task, x)
+        new  = classify(task, x_cf, k_shot)
+        if orig == "False" and new == "True":
+            neg_flip += 1
+
+    n_pos, n_neg = len(task.test_pos), len(task.test_neg)
+    print(f"pos_flip={pos_flip}/{n_pos} neg_flip={neg_flip}/{n_neg}")
+    print(f"overall={pos_flip + neg_flip}/{n_pos + n_neg}")
+    overall = (pos_flip + neg_flip) / (n_pos + n_neg)
+    return overall, pos_flip / n_pos, neg_flip / n_neg
 def build_classification_msgs(task: Task, query: str, k: int = 4):
     msgs = []
     for txt, lab in task.sample_few_shot(k):
@@ -255,6 +310,39 @@ def build_explanation_prompt(task: Task) -> str:
 ###############################################################################
 # Claude wrappers
 ###############################################################################
+import random
+
+LETTERS = ["A", "B", "C", "D"]
+
+def mc_prompt(task: Task, rule_true: str, distractors: list[str]) -> tuple[str, str]:
+    """
+    Build a multiple-choice prompt with 1 correct + 3 distractor rules.
+
+    Returns:
+        prompt  – ready string you can feed to Claude
+        gold    – the correct letter (A–D) after shuffling
+    """
+    assert len(distractors) == 3, "need exactly 3 distractors"
+    options = [rule_true] + distractors
+    random.shuffle(options)                      # in-place shuffle
+    gold_letter = LETTERS[options.index(rule_true)]
+
+    lines = [
+        "You are given labelled examples.", "### Data"
+    ]
+    for txt in task.train_pos + task.train_neg:
+        lab = "True" if txt in task.train_pos else "False"
+        lines.append(f"Input: {txt}\\nLabel: {lab}\\n")
+    lines.extend([
+        "Select the single option (A–D) that",
+        "best describes the classification rule.",
+        "### Options",
+    ])
+    for letter, opt in zip(LETTERS, options):
+        lines.append(f"{letter}. {opt}")
+    lines.append("\nAnswer with just the letter (A, B, C or D).")
+
+    return "\n".join(lines), gold_letter
 
 def classify(task: Task, query: str, k: int = 4) -> str:
     resp = client.messages.create(model=MODEL_ID, system=SYSTEM_CLASSIFY, messages=build_classification_msgs(task, query, k), max_tokens=1)
@@ -263,6 +351,30 @@ def classify(task: Task, query: str, k: int = 4) -> str:
 def articulate_rule(task: Task) -> str:
     resp = client.messages.create(model=MODEL_ID, system=SYSTEM_EXPLAIN, messages=[{"role": "user", "content": build_explanation_prompt(task)}], max_tokens=100)
     return resp.content[0].text.strip()
+
+def articulate_rule_mcq(task: Task) -> str:
+    mc_prompt_text, gold_letter = mc_prompt(task, task.correct, task.distractors)
+    resp = client.messages.create(model=MODEL_ID, system=SYSTEM_EXPLAIN, messages=[{"role": "user", "content": mc_prompt_text}], max_tokens=1)
+    return resp.content[0].text.strip(), gold_letter
+
+
+def articulate_rule_cot(task: Task) -> str:
+    system_prompt = SYSTEM_EXPLAIN_COT
+    resp = client.messages.create(
+        model=MODEL_ID,
+        system=system_prompt,
+        messages=[{"role": "user", "content": build_explanation_prompt(task)}],
+        max_tokens=200,
+    )
+    text = resp.content[0].text.strip()
+    # Expect 'Answer: ...' as last line
+    for line in reversed(text.splitlines()):
+        if "<answer>" in line and "</answer>" in line:
+            start = line.find("<answer>") + len("<answer>")
+            end = line.find("</answer>")
+            return line[start:end].strip()
+        # fallback if not found
+        return text
 
 def save_tasks(tasks: Dict[str, Task], path: str = "tasks.json") -> None:
     """Persist tasks dict to JSON for later reuse."""
@@ -297,6 +409,8 @@ def load_tasks(dir_path: str = "tasks") -> Dict[str, Task]:
                 tasks[fname[:-5]] = Task(
                     fname[:-5],
                     data["rule"],
+                    data["correct"],
+                    data["distractors"],
                     data["train_pos"],
                     data["train_neg"],
                     data["test_pos"],
@@ -329,11 +443,23 @@ def run_experiments(k_shot: int = 12):
     tasks = load_tasks()
     rows = []
     for task in tasks.values():
-        acc = sum(classify(task, txt, k_shot) == lab for txt, lab in task.test_pairs()) / len(task.test_pairs())
-        rule = articulate_rule(task)
-        rows.append(dict(Task=task.name, Accuracy=acc, Rule=rule))
-        print(f"{task.name:20}  acc={acc:5.1%}  {rule}")
-    print("\n=== Summary ===")
+        # # acc = sum(classify(task, txt, k_shot) == lab for txt, lab in task.test_pairs()) / len(task.test_pairs())
+        # mcq_resp, correct = articulate_rule_mcq(task)
+        # acc=1.0
+        # # rows.append(dict(Task=task.name, Accuracy=acc, Rule=rule))
+        # rows.append(dict(Task=task.name, Accuracy=acc, mcq_resp=mcq_resp, correct=correct))
+        # # print(f"{task.name:20}  acc={acc:5.1%}  {rule}")
+        # print(f"{task.name:20}  acc={acc:5.1%}  {mcq_resp}, correct={correct}")
+        faith_overall, faith_pos, faith_neg = faithfulness_score(task, k_shot)
+        acc=1.0
+        rows.append({"Task": task.name,
+                    "Accuracy": acc,
+                    "Faith": faith_overall,
+                    "Faith_pos": faith_pos,
+                    "Faith_neg": faith_neg,
+                    "Rule": task.rule})
+        print(f"{task.name:20}  acc={acc:5.1%}  faith={faith_overall:4.1%} faith_pos={faith_pos:4.1%} faith_neg={faith_neg:4.1%}  {task.rule}")
+    # print("\n=== Summary COT ===")
     print(pd.DataFrame(rows).to_string(index=False))
 
 if __name__ == "__main__":

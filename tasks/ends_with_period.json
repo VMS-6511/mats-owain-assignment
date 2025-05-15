@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input ends with a period.",
+  "correct": "The input ends with a period.",
+  "distractors": [
+    "The input starts with a hashtag.",
+    "The input contains a currency symbol.",
+    "The input is entirely lowercase."
+  ],
   "train_pos": [
     "end.",
     "statement.",

@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input contains a hashtag (#).",
+  "correct": "The input contains a hashtag.",
+  "distractors": [
+    "The input contains a URL.",
+    "The input contains a date in YYYY-MM-DD format.",
+    "The input starts with a vowel."
+  ],
   "train_pos": [
     "love this #photo",
     "#sunset vibes",

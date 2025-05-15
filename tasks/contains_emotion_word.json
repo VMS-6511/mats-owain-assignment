@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input contains an emotion word (happy, sad, angry).",
+  "correct": "The input contains an emotion word.",
+  "distractors":[
+    "The input contains a Roman numeral.",
+    "The input contains a temperature in °C or °F.",
+    "The input contains a hashtag."
+  ],
   "train_pos": [
     "I am happy",
     "she feels sad",

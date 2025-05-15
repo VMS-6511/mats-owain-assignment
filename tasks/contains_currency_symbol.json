@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input contains $, \u20ac, \u00a3 or \u00a5.",
+  "correct": "The input contains a currency symbol.",
+  "distractors": [
+    "The input consists only of digits.",
+    "The input length is a prime number.",
+    "The input contains the word “happy”."
+  ],
   "train_pos": [
     "cost is $5",
     "price \u20ac10",

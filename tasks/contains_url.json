@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the input contains http or https URL.",
+  "correct": "The input contains a URL.",
+  "distractors": [
+    "The input contains an email address.",
+    "The input ends with an exclamation mark.",
+    "The input consists only of digits."
+  ],
   "train_pos": [
     "go to http://example.com",
     "visit https://openai.com",

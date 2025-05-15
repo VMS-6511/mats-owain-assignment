@@ -1,5 +1,11 @@
 {
   "rule": "Label is True *iff* the character count is even.",
+  "correct": "The input has an even number of characters.",
+  "distractors": [
+    "The number of words in the input is even.",
+    "The input contains a URL.",
+    "The input ends with three dots."
+  ],
   "train_pos": [
     "abcd",
     "1234",
